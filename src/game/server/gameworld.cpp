@@ -239,18 +239,40 @@ void CGameWorld::UpdatePlayerMaps()
 
 		std::nth_element(&Dist[0], &Dist[VANILLA_MAX_CLIENTS - 1], &Dist[MAX_CLIENTS], distCompare);
 
-		int Index = 1; // exclude self client id
-		for(int j = 0; j < VANILLA_MAX_CLIENTS - 1; j++)
+		for(unsigned i = 0; i < MAX_CLIENTS - 1; i++)
 		{
-			pMap[j + 1] = -1; // also fill player with empty name to say chat msgs
-			if(Dist[j].second == i || Dist[j].first > 5e9f)
+			if(pMap[i] == -1)
 				continue;
-			pMap[Index++] = Dist[j].second;
-		}
+			bool Found;
+			int FoundID;
 
-		// sort by real client ids, guarantee order on distance changes, O(Nlog(N)) worst case
-		// sort just clients in game always except first (self client id) and last (fake client id) indexes
-		std::sort(&pMap[1], &pMap[minimum(Index, VANILLA_MAX_CLIENTS - 1)]);
+			Found = false;
+			for(FoundID = 0; FoundID < MAX_CLIENTS - 1; FoundID ++)
+			{
+				if(Dist[FoundID].second == pMap[i])
+				{
+					Found = true;
+					break;
+				}
+			}
+			if(Found)
+				Dist.erase(Dist.begin() + FoundID);
+			else
+				pMap[i] = -1;
+		}
+	
+		int Index = 0;
+		for(int i = 1; i < MAX_CLIENTS - 1; i++)
+		{
+			if(pMap[i] == -1)
+			{
+				pMap[i] = Dist[Index].second;
+				Index ++;
+			}
+		}
+	
+		pMap[MAX_CLIENTS - 1] = -1;
+		pMap[0] = ClientID;
 	}
 }
 
