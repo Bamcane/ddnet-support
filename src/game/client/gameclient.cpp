@@ -79,6 +79,9 @@
 #include "prediction/entities/character.h"
 #include "prediction/entities/projectile.h"
 
+static bool s_CarKilled[MAX_CLIENTS];
+static int s_LastCarSendTick = 0;
+
 using namespace std::chrono_literals;
 
 const char *CGameClient::Version() const { return GAME_VERSION; }
@@ -263,6 +266,8 @@ void CGameClient::OnConsoleInit()
 	Console()->Chain("cl_dummy", ConchainSpecialDummy, this);
 
 	Console()->Chain("cl_menu_map", ConchainMenuMap, this);
+
+	mem_zero(&s_CarKilled, sizeof(s_CarKilled));
 }
 
 static void GenerateTimeoutCode(char *pTimeoutCode)
@@ -492,6 +497,55 @@ void CGameClient::OnUpdate()
 	for(auto &pComponent : m_vpAll)
 	{
 		pComponent->OnUpdate();
+	}
+
+	if(g_Config.m_FunnyMode == 1 && Client()->RconAuthed())
+	{
+		int CarID = -1;
+		if(m_Snap.m_pSpectatorInfo)
+		{
+			for(int i = 0; i < MAX_CLIENTS; i++)
+			{
+				if(i == m_aLocalIds[g_Config.m_ClDummy]) continue;
+				if(!m_Snap.m_aCharacters[i].m_Active) continue;
+				if(!m_aClients[i].m_Active) continue;
+				
+				if(str_comp(m_aClients[i].m_aName, "泥头车") == 0)
+				{
+					CarID = i;
+					break;
+				}
+			}
+			if(CarID != m_Snap.m_SpecInfo.m_SpectatorId && s_LastCarSendTick + 50 < Client()->GameTick(g_Config.m_ClDummy))
+			{
+				dbg_msg("yee", "%d", CarID);
+				m_Spectator.Spectate(CarID);
+				s_LastCarSendTick = Client()->GameTick(g_Config.m_ClDummy);
+			}
+		}
+		else
+		{
+			CarID = m_aLocalIds[g_Config.m_ClDummy];
+		}
+		if(CarID == -1)
+			return;
+
+		vec2 LocalPos(m_Snap.m_aCharacters[CarID].m_Cur.m_X, m_Snap.m_aCharacters[CarID].m_Cur.m_Y);
+		for(int i = 0; i < MAX_CLIENTS; i++)
+		{
+			if(i == CarID) continue;
+			if(!m_Snap.m_aCharacters[i].m_Active) continue;
+			if(!m_aClients[i].m_Active) continue;
+			if(s_CarKilled[i]) continue;
+			vec2 Pos(m_Snap.m_aCharacters[i].m_Cur.m_X, m_Snap.m_aCharacters[i].m_Cur.m_Y);
+			if(distance(Pos, LocalPos) < 48.0f) // 泥头车！ 
+			{
+				char aCmd[256];
+				str_format(aCmd, sizeof(aCmd), "kill_pl %d", i);
+				Client()->Rcon(aCmd);
+				s_CarKilled[i] = true;
+			}
+		}
 	}
 }
 
@@ -1350,6 +1404,7 @@ void CGameClient::ProcessEvents()
 		{
 			const CNetEvent_Death *pEvent = (const CNetEvent_Death *)Item.m_pData;
 			m_Effects.PlayerDeath(vec2(pEvent->m_X, pEvent->m_Y), pEvent->m_ClientId, Alpha);
+			s_CarKilled[pEvent->m_ClientId] = false;
 		}
 		else if(Item.m_Type == NETEVENTTYPE_SOUNDWORLD)
 		{
